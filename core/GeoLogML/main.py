@@ -21,10 +21,10 @@ class LithologyDescription:
 lithology_colors = {
     0: '#e6e208',  # Sandstone
     1: '#f2f21d',  # Sandstone/Shale
-    2: '#0b8102',  # Shale
+    2: '#ff7f0e',  # Shale
     3: '#bb4cd0',  # Marl
     4: '#f75f00',  # Dolomite
-    5: '#ff7f0e',  # Limestone
+    5: '#0b8102',  # Limestone
     6: '#1f77b4',  # Chalk
     7: '#ff00ff',  # Halite
     8: '#9467bd',  # Anhydrite
@@ -67,7 +67,6 @@ lithology_keys = {
 # Создание словаря литологий с названиями и цветами
 lithology_description_dict = {lithology_numbers[v]: (k, lithology_colors[lithology_numbers[v]]) for k, v in lithology_keys.items()}
 lithology_description = LithologyDescription(lithology_description_dict)
-
 class Ui_MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -76,12 +75,12 @@ class Ui_MainWindow(QMainWindow):
         self.load_model()  # Автоматически загружаем модель
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1200, 900)
+        MainWindow.resize(1200, 1100)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
 
         self.webEngineView = QWebEngineView(self.centralwidget)
-        self.webEngineView.setGeometry(QRect(300, 10, 980, 880))
+        self.webEngineView.setGeometry(QRect(300, 10, 1000, 900))
         # Подключение обработчиков событий
         self.webEngineView.loadStarted.connect(self.onLoadStarted)
         self.webEngineView.loadProgress.connect(self.onLoadProgress)
@@ -197,6 +196,7 @@ class Ui_MainWindow(QMainWindow):
             print(f"Ошибка при загрузке модели: {str(e)}")
 
     def get_lithology_predictions(self):
+        print(lithology_description)
         features = ['DEPTH_MD',
                     'CALI',
                     'RSHA',
@@ -244,14 +244,19 @@ class Ui_MainWindow(QMainWindow):
             print(test_well['Predicted_Class'])
 
             test_well['Facies'] = test_well['Predicted_Class'].map(lithology_keys).map(lithology_numbers)
+            test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(lithology_numbers)
             print("Предсказания обработаны")
-
+            unique_facies = test_well['Predicted Facies'].unique()
+            # Создаем новый словарь с уникальными значениями
+            unique_lithology_description = {key: lithology_description_dict[key] for key in unique_facies if
+                                            key in lithology_description_dict}
             print("Генерация графика...")
+            print(unique_lithology_description)
             fig = cwp.plot_logs(
                 df=test_well,
                 logs=selected_columns,
-                lithology_logs=['FORCE_2020_LITHOFACIES_LITHOLOGY'],
-                lithology_description=lithology_description,
+                lithology_logs=['Facies'],
+                lithology_description=LithologyDescription(unique_lithology_description),
                 show_fig=False
             )
             # Убираем легенду каротажных кривых
@@ -298,15 +303,15 @@ class Ui_MainWindow(QMainWindow):
 
             # Проверка и обновление ширины
             current_width = fig.layout.width if fig.layout.width is not None else 800  # Задаем значение по умолчанию, если None
-
+            well_name = os.path.basename(self.file_path).replace(".las", "")
             # Обновляем макет
             fig_with_legend.update_layout(
                 height=fig.layout.height,
                 width=current_width + 200,  # Увеличиваем ширину для новой колонки
-                title='',  # Убираем заголовок
+                title_text=f"Скважина {well_name}",  # Устанавливаем заголовок
+                title_x=0.5,  # Располагаем заголовок посередине
                 yaxis=dict(autorange='reversed')  # Инвертируем ось Y
             )
-
             # Поворачиваем названия колонок на 45 градусов
             for annotation in fig_with_legend.layout.annotations:
                 annotation['textangle'] = 45

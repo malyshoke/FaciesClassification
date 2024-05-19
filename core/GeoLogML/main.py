@@ -1,110 +1,110 @@
 import sys
 import os
+import re
+import numpy as np
 import pandas as pd
-from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QFileDialog, QListWidget, QListWidgetItem
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import QRect, QUrl, Qt
+from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QListWidgetItem
+from PySide6.QtCore import QUrl, Qt
+from ui_mainwindow import Ui_MainWindow
 from cegal.welltools.wells import Well
 from cegal.welltools.plotting import CegalWellPlotter as cwp
 from plotly.offline import plot
-import joblib
-import numpy as np
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import re
-# Создание класса-обертки для литологий
+import joblib
+from constants import Constants
+from LithologyModel import LithologyModel
+from PySide6.QtWidgets import QMessageBox
+
 class LithologyDescription:
     def __init__(self, lithology_dict):
         self.dictionary = lithology_dict
 
-# Примерные цвета для каждой литологии
-lithology_colors = {
-    0: '#e6e208',  # Sandstone
-    1: '#f2f21d',  # Sandstone/Shale
-    2: '#ff7f0e',  # Shale
-    3: '#bb4cd0',  # Marl
-    4: '#f75f00',  # Dolomite
-    5: '#0b8102',  # Limestone
-    6: '#1f77b4',  # Chalk
-    7: '#ff00ff',  # Halite
-    8: '#9467bd',  # Anhydrite
-    9: '#d62728',  # Tuff
-    10: '#8c564b',  # Coal
-    11: '#7f7f7f'  # Basement
-}
+def add_legend_to_figure(fig, lithology_description, well_name):
+    # Получаем количество колонок из меток осей x
+    x_axes = [ax for ax in fig.layout if re.match(r'xaxis\d*', ax)]
+    num_cols = len(x_axes)
 
-# Создание словарей литологий и цветов
-lithology_numbers = {
-    30000: 0,
-    65030: 1,
-    65000: 2,
-    80000: 3,
-    74000: 4,
-    70000: 5,
-    70032: 6,
-    88000: 7,
-    86000: 8,
-    99000: 9,
-    90000: 10,
-    93000: 11
-}
+    # Создаем новую фигуру с дополнительной колонкой для легенды
+    fig_with_legend = make_subplots(
+        rows=1,
+        cols=num_cols + 1,  # Увеличиваем количество колонок на 1
+        shared_yaxes=True,
+        subplot_titles=[*[fig.layout.annotations[i].text for i in range(len(fig.layout.annotations))], "Facies Colors"]
+    )
 
-lithology_keys = {
-    'Sandstone': 30000,
-    'Sandstone/Shale': 65030,
-    'Shale': 65000,
-    'Marl': 80000,
-    'Dolomite': 74000,
-    'Limestone': 70000,
-    'Chalk': 70032,
-    'Halite': 88000,
-    'Anhydrite': 86000,
-    'Tuff': 99000,
-    'Coal': 90000,
-    'Basement': 93000
-}
+    # Копируем существующие трейсы в новую фигуру
+    for trace in fig.data:
+        col = int(re.search(r'\d+', trace.xaxis).group()) if re.search(r'\d+', trace.xaxis) else 1
+        fig_with_legend.add_trace(trace, row=1, col=col)
 
-# Создание словаря литологий с названиями и цветами
-lithology_description_dict = {lithology_numbers[v]: (k, lithology_colors[lithology_numbers[v]]) for k, v in lithology_keys.items()}
-lithology_description = LithologyDescription(lithology_description_dict)
-class Ui_MainWindow(QMainWindow):
+    # Генерация данных для легенды литологии
+    lithology_values = list(lithology_description.dictionary.keys())
+    lithology_names = [lithology_description.dictionary[val][0] for val in lithology_values]
+    lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
+
+    # Создаем Heatmap для легенды литологии
+    fig_with_legend.add_trace(
+        go.Heatmap(
+            z=np.array(lithology_values).reshape(len(lithology_values), 1),
+            # Преобразуем значения литологии в 2D массив
+            x=['Facies Colors'],  # Используем подпись для нового столбца
+            y=lithology_names,
+            colorscale=list(zip(np.linspace(0, 1, len(lithology_colors)), lithology_colors)),
+            showscale=False,  # Отключаем цветовую шкалу
+            hoverinfo='y',
+            hovertemplate="<b>Lithology</b>: %{y}<extra></extra>"
+        ),
+        row=1,
+        col=num_cols + 1  # Добавляем в новую последнюю колонку
+    )
+
+    # Проверка и обновление ширины
+    current_width = fig.layout.width if fig.layout.width is not None else 700  # Задаем значение по умолчанию, если None
+
+    # Обновляем макет
+    fig_with_legend.update_layout(
+        height=fig.layout.height,
+        width=current_width + 200,  # Увеличиваем ширину для новой колонки
+        title='',  # Убираем заголовок
+        yaxis=dict(autorange='reversed')  # Инвертируем ось Y
+    )
+
+    fig_with_legend.update_layout(
+        width=current_width + 150,
+        height=720,
+        title_text=f"Скважина {well_name}",
+        title_x=0.5
+    )
+    # Поворачиваем названия колонок на 45 градусов
+    for annotation in fig_with_legend.layout.annotations:
+        annotation['textangle'] = 45
+
+    return fig_with_legend
+
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.catboost_model = None  # Инициализируем модель как None
-        self.setupUi(self)
-        self.load_model()  # Автоматически загружаем модель
-    def setupUi(self, MainWindow):
-        MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1200, 1100)
-        self.centralwidget = QWidget(MainWindow)
-        self.centralwidget.setObjectName("centralwidget")
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+        self.file_path = None
+        self.columns = []
+        self.test_well = None
 
-        self.webEngineView = QWebEngineView(self.centralwidget)
-        self.webEngineView.setGeometry(QRect(300, 10, 1000, 900))
+        # Инициализация LithologyModel
+        self.lithology_model = LithologyModel('catboost_model.pkl', 'new_scaler.pkl')
+
+        lithology_description_dict = {
+            Constants.LITHOLOGY_NUMBERS[v]: (k, Constants.LITHOLOGY_COLORS[Constants.LITHOLOGY_NUMBERS[v]])
+            for k, v in Constants.LITHOLOGY_KEYS.items()
+        }
+        self.lithology_description = LithologyDescription(lithology_description_dict)
+
         # Подключение обработчиков событий
-        self.webEngineView.loadStarted.connect(self.onLoadStarted)
-        self.webEngineView.loadProgress.connect(self.onLoadProgress)
-        self.webEngineView.loadFinished.connect(self.onLoadFinished)
-
-        self.pushButtonLoad = QPushButton("Выбрать LAS файл", self.centralwidget)
-        self.pushButtonLoad.setGeometry(QRect(10, 10, 280, 50))
-        self.pushButtonLoad.clicked.connect(self.load_las_file)
-
-        self.pushButton = QPushButton("Построить график каротажа", self.centralwidget)
-        self.pushButton.setGeometry(QRect(10, 70, 280, 50))
-        self.pushButton.clicked.connect(self.plot_full_graph)
-
-        self.pushButtonSimple = QPushButton("Получить предсказание литологии", self.centralwidget)
-        self.pushButtonSimple.setGeometry(QRect(10, 130, 280, 50))
-        self.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
-
-        self.columnsListWidget = QListWidget(self.centralwidget)
-        self.columnsListWidget.setGeometry(QRect(10, 190, 280, 200))
-
-        MainWindow.setCentralWidget(self.centralwidget)
-
-        self.file_path = None  # Переменная для хранения пути к выбранному файлу
-        self.columns = []  # Переменная для хранения колонок датафрейма
+        self.ui.pushButtonLoad.clicked.connect(self.load_las_file)
+        self.ui.pushButton.clicked.connect(self.plot_full_graph)
+        self.ui.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
+        self.ui.saveButton.clicked.connect(self.save_to_csv)
 
     def load_las_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать LAS файл", "", "LAS Files (*.las)")
@@ -112,35 +112,41 @@ class Ui_MainWindow(QMainWindow):
             self.file_path = file_path
             print(f"Файл выбран: {file_path}")
 
-            # Загрузка колонок из LAS файла
             force_well = Well(filename=self.file_path, path=None)
-            test_well = pd.DataFrame(force_well.df())
-            self.columns = test_well.columns.tolist()
+            self.test_well = pd.DataFrame(force_well.df())
 
-            # Заполнение выпадающего списка колонками
-            self.columnsListWidget.clear()
+            # Выбираем только те колонки, которые не входят в exclude_columns
+            self.columns = [col for col in self.test_well.columns if col not in Constants.exclude_columns]
+            self.ui.columnsListWidget.clear()
             for column in self.columns:
                 item = QListWidgetItem(column)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
-                self.columnsListWidget.addItem(item)
+                self.ui.columnsListWidget.addItem(item)
+
+    def save_to_csv(self):
+        if self.test_well is not None:
+            file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "CSV Files (*.csv)")
+            if file_name:
+                self.test_well.to_csv(file_name, index=False)
+                print(f"Данные сохранены в {file_name}")
+        else:
+            QMessageBox.warning(self, "Нет данных", "Загрузите данные перед сохранением в CSV.")
 
     def get_selected_columns(self):
         selected_columns = []
-        for index in range(self.columnsListWidget.count()):
-            item = self.columnsListWidget.item(index)
+        for index in range(self.ui.columnsListWidget.count()):
+            item = self.ui.columnsListWidget.item(index)
             if item.checkState() == Qt.Checked:
                 selected_columns.append(item.text())
         return selected_columns
 
-
     def plot_full_graph(self):
         if not self.file_path:
-            print("Пожалуйста, выберите файл LAS перед построением графика.")
+            QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл LAS перед построением графика.")
             return
 
         try:
-            # Извлекаем название скважины из имени файла
             well_name = os.path.basename(self.file_path).replace(".las", "")
 
             print("Загрузка данных скважины...")
@@ -154,10 +160,9 @@ class Ui_MainWindow(QMainWindow):
                 test_well = test_well.head(max_rows)
                 print(f"Сокращенные данные до {len(test_well)} строк.")
 
-            # Получаем выбранные пользователем колонки
             selected_columns = self.get_selected_columns()
             if not selected_columns:
-                print("Пожалуйста, выберите хотя бы одну колонку для построения графика.")
+                QMessageBox.information(self, "Колонки не выбраны", "Пожалуйста, выберите хотя бы одну колонку для построения графика.")
                 return
 
             print("Генерация полного графика...")
@@ -169,49 +174,28 @@ class Ui_MainWindow(QMainWindow):
             fig.update_layout(
                 width=820,
                 height=720,
-                title_text=f"Скважина {well_name}",  # Устанавливаем заголовок
-                title_x=0.5  # Располагаем заголовок посередине
+                title_text=f"Скважина {well_name}",
+                title_x=0.5,
             )
             print("График сгенерирован.")
 
             print("Преобразование графика в HTML...")
-            raw_html = plot(fig, include_plotlyjs='cdn', output_type='div')
+            config = {
+                'displayModeBar': False
+            }
+            raw_html = plot(fig, include_plotlyjs='cdn', output_type='div', config=config)
             print("HTML сгенерирован.")
 
             print("Загрузка HTML в QWebEngineView...")
-            self.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
+            self.ui.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
             print("HTML загружен в QWebEngineView.")
 
         except Exception as e:
-            print("Ошибка при генерации или загрузке графика:", str(e))
-
-    def load_model(self):
-        model_path = './catboost_model.pkl'  # Задаём путь к файлу модели
-        try:
-            self.catboost_model = joblib.load(model_path)
-            print(f"Модель загружена из: {model_path}")
-        except FileNotFoundError:
-            print(f"Файл модели не найден в пути: {model_path}")
-        except Exception as e:
-            print(f"Ошибка при загрузке модели: {str(e)}")
+            print("Ошибка при построении графика:", str(e))
 
     def get_lithology_predictions(self):
-        print(lithology_description)
-        features = ['DEPTH_MD',
-                    'CALI',
-                    'RSHA',
-                    'RMED',
-                    'RDEP',
-                    'RHOB',
-                    'GR',
-                    'PEF',
-                    'DTC',
-                    'BS',
-                    'NPHI',
-                    'SP']
-
         if not self.file_path:
-            print("Пожалуйста, выберите файл LAS перед выполнением предсказания.")
+            QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл LAS перед построением графика.")
             return
 
         try:
@@ -220,7 +204,7 @@ class Ui_MainWindow(QMainWindow):
             test_well = pd.DataFrame(force_well.df())
             print("Данные загружены успешно.")
 
-            test_well = test_well.iloc[10:]  # Удаление первых 1000 строк
+            test_well = test_well.iloc[10:]
             test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
@@ -230,118 +214,49 @@ class Ui_MainWindow(QMainWindow):
 
             print("Получение предсказаний...")
             selected_columns = self.get_selected_columns()
-            if not set(features).issubset(test_well.columns):
-                missing = list(set(features) - set(test_well.columns))
-                raise ValueError(f"Отсутствуют следующие необходимые столбцы: {missing}")
+            if not set(Constants.FEATURES).issubset(test_well.columns):
+                missing = list(set(Constants.FEATURES) - set(test_well.columns))
+                QMessageBox.critical(self, "Недостающие колонки",
+                                     f"Отсутствуют следующие необходимые столбцы: {', '.join(missing)}")
 
-            predicted_classes = self.catboost_model.predict(test_well[features])
-            if isinstance(predicted_classes, np.ndarray) and predicted_classes.ndim > 1:
-                # Преобразуем предсказания в одномерный массив, если они в формате массива массивов
-                predicted_classes = predicted_classes.ravel()
+            # Предобработка данных и получение предсказаний
+            predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
 
-            # Добавление предсказанных классов в DataFrame
-            test_well['Predicted_Class'] = predicted_classes
-            print(test_well['Predicted_Class'])
+            if predictions is not None:
+                test_well['Predicted_Class'] = predictions
+                test_well['Facies'] = test_well['Predicted_Class'].map(Constants.LITHOLOGY_KEYS).map(Constants.LITHOLOGY_NUMBERS)
+                test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(Constants.LITHOLOGY_NUMBERS)
+                print("Предсказания обработаны")
+                unique_facies = test_well['Predicted Facies'].unique()
+                unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in unique_facies if
+                                                key in self.lithology_description.dictionary}
+                print("Генерация графика...")
+                print(unique_lithology_description)
+                fig = cwp.plot_logs(
+                    df=test_well,
+                    logs=selected_columns,
+                    lithology_logs=['Predicted Facies'],
+                    lithology_description=LithologyDescription(unique_lithology_description),
+                    show_fig=False
+                )
+                well_name = os.path.basename(self.file_path).replace(".las", "")
+                fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
+                config = {
+                    'displayModeBar': False
+                }
+                print("Преобразование графика в HTML...")
+                raw_html = plot(fig_with_legend, include_plotlyjs='cdn', output_type='div', config=config)
+                print("HTML сгенерирован.")
 
-            test_well['Facies'] = test_well['Predicted_Class'].map(lithology_keys).map(lithology_numbers)
-            test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(lithology_numbers)
-            print("Предсказания обработаны")
-            unique_facies = test_well['Predicted Facies'].unique()
-            # Создаем новый словарь с уникальными значениями
-            unique_lithology_description = {key: lithology_description_dict[key] for key in unique_facies if
-                                            key in lithology_description_dict}
-            print("Генерация графика...")
-            print(unique_lithology_description)
-            fig = cwp.plot_logs(
-                df=test_well,
-                logs=selected_columns,
-                lithology_logs=['Facies'],
-                lithology_description=LithologyDescription(unique_lithology_description),
-                show_fig=False
-            )
-            # Убираем легенду каротажных кривых
-            fig.update_layout(showlegend=False)
-
-            # Получаем количество колонок из меток осей x
-            x_axes = [ax for ax in fig.layout if re.match(r'xaxis\d*', ax)]
-            num_cols = len(x_axes)
-
-            # Создаем новую фигуру с дополнительной колонкой для легенды
-            fig_with_legend = make_subplots(
-                rows=1,
-                cols=num_cols + 1,  # Увеличиваем количество колонок на 1
-                shared_yaxes=True,
-                subplot_titles=[*[fig.layout.annotations[i].text for i in range(len(fig.layout.annotations))],
-                                "Facies Colors"]
-            )
-
-            # Копируем существующие трейсы в новую фигуру
-            for trace in fig.data:
-                col = int(re.search(r'\d+', trace.xaxis).group()) if re.search(r'\d+', trace.xaxis) else 1
-                fig_with_legend.add_trace(trace, row=1, col=col)
-
-            # Генерация данных для легенды литологии
-            lithology_values = list(lithology_description.dictionary.keys())
-            lithology_names = [lithology_description.dictionary[val][0] for val in lithology_values]
-            lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
-
-            # Создаем Heatmap для легенды литологии
-            fig_with_legend.add_trace(
-                go.Heatmap(
-                    z=np.array(lithology_values).reshape(len(lithology_values), 1),
-                    # Преобразуем значения литологии в 2D массив
-                    x=['Facies Colors'],  # Используем подпись для нового столбца
-                    y=lithology_names,
-                    colorscale=list(zip(np.linspace(0, 1, len(lithology_colors)), lithology_colors)),
-                    showscale=False,  # Отключаем цветовую шкалу
-                    hoverinfo='y',
-                    hovertemplate="<b>Lithology</b>: %{y}<extra></extra>"
-                ),
-                row=1,
-                col=num_cols + 1  # Добавляем в новую последнюю колонку
-            )
-
-            # Проверка и обновление ширины
-            current_width = fig.layout.width if fig.layout.width is not None else 800  # Задаем значение по умолчанию, если None
-            well_name = os.path.basename(self.file_path).replace(".las", "")
-            # Обновляем макет
-            fig_with_legend.update_layout(
-                height=fig.layout.height,
-                width=current_width + 200,  # Увеличиваем ширину для новой колонки
-                title_text=f"Скважина {well_name}",  # Устанавливаем заголовок
-                title_x=0.5,  # Располагаем заголовок посередине
-                yaxis=dict(autorange='reversed')  # Инвертируем ось Y
-            )
-            # Поворачиваем названия колонок на 45 градусов
-            for annotation in fig_with_legend.layout.annotations:
-                annotation['textangle'] = 45
-
-            print("Преобразование графика в HTML...")
-            raw_html = plot(fig_with_legend, include_plotlyjs='cdn', output_type='div')
-            print("HTML сгенерирован.")
-            print("Загрузка HTML в QWebEngineView...")
-            self.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
-            print("HTML загружен в QWebEngineView.")
+                print("Загрузка HTML в QWebEngineView...")
+                self.ui.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
+                print("HTML загружен в QWebEngineView.")
 
         except Exception as e:
-            print(f"Ошибка при выполнении предсказания или построении графика: {type(e).__name__}: {e}")
-
-    def onLoadStarted(self):
-        print("Загрузка начата.")
-
-    def onLoadProgress(self, progress):
-        print(f"Загрузка прогресс: {progress}%")
-
-    def onLoadFinished(self, ok):
-        if ok:
-            print("Загрузка завершена успешно.")
-        else:
-            print("Загрузка завершена с ошибкой.")
+            print("Ошибка при выполнении предсказания:", str(e))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    MainWindow = QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
-    MainWindow.show()
+    window = MainWindow()
+    window.show()
     sys.exit(app.exec())

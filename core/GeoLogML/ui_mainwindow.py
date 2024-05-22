@@ -8,16 +8,36 @@ class Ui_MainWindow(QMainWindow):
         super().__init__()
         self.setupUi(self)
 
+    def generate_legend_html(self):
+        lithology_colors = {
+            0: ('#e6e208', 'Sandstone'),
+            1: ('#f2f21d', 'Sandstone/Shale'),
+            2: ('#0b8102', 'Shale'),
+            3: ('#bb4cd0', 'Marl'),
+            4: ('#f75f00', 'Dolomite'),
+            5: ('#ff7f0e', 'Limestone'),
+            6: ('#1f77b4', 'Chalk'),
+            7: ('#ff00ff', 'Halite'),
+            8: ('#9467bd', 'Anhydrite'),
+            9: ('#d62728', 'Tuff'),
+            10: ('#8c564b', 'Coal'),
+            11: ('#7f7f7f', 'Basement')
+        }
+        html = '<h3>Legend:</h3><ul style="list-style: none; padding-left: 0;">'
+        for lith_id, (color, name) in lithology_colors.items():
+            html += f'<li style="margin-bottom: 2px;"><span style="color: {color}; font-size: 18px;">■</span> {lith_id} - {name}</li>'
+        html += '</ul>'
+        return html
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.setWindowTitle("GeoLogML")
-        MainWindow.resize(1200, 700)
+        MainWindow.resize(1300, 800)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.centralwidget.setStyleSheet("background-color: white;")
 
         self.webEngineView = QWebEngineView(self.centralwidget)
-        self.webEngineView.setGeometry(QRect(300, 10, 1000, 900))
+        self.webEngineView.setGeometry(QRect(300, 10, 1010, 915))
         self.webEngineView.loadStarted.connect(self.onLoadStarted)
         self.webEngineView.loadProgress.connect(self.onLoadProgress)
         self.webEngineView.loadFinished.connect(self.onLoadFinished)
@@ -54,6 +74,11 @@ class Ui_MainWindow(QMainWindow):
         self.progressBar.setVisible(False)
         self.progressBar.setStyleSheet(self.circularProgressBarStyle())
 
+        self.legendLabel = QLabel(self.centralwidget)
+        self.legendLabel.setGeometry(QRect(300, 920, 1000, 100))  # Регулируйте размер и позицию под ваш интерфейс
+        self.legendLabel.setText(self.generate_legend_html())
+        self.legendLabel.setStyleSheet("font-size: 14px;")  # При необходимости настройте стиль
+
         MainWindow.setCentralWidget(self.centralwidget)
 
     def circularProgressBarStyle(self):
@@ -64,7 +89,7 @@ class Ui_MainWindow(QMainWindow):
             }
             QProgressBar::chunk {
                 background-color: #05B8CC;
-                width: 10px; 
+                width: 100px; 
                 margin: 0px;
                 border-radius: 50px;
             }
@@ -137,5 +162,3 @@ class Ui_MainWindow(QMainWindow):
         else:
             print("Загрузка завершена с ошибкой.")
         self.progressBar.setVisible(False)  # Скрыть прогресс бар после завершения загрузки
-
-

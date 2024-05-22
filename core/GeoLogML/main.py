@@ -19,11 +19,22 @@ from PySide6.QtWidgets import QMessageBox
 class LithologyDescription:
     def __init__(self, lithology_dict):
         self.dictionary = lithology_dict
+import re
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 
 def add_legend_to_figure(fig, lithology_description, well_name):
     # Получаем количество колонок из меток осей x
     x_axes = [ax for ax in fig.layout if re.match(r'xaxis\d*', ax)]
     num_cols = len(x_axes)
+    lithology_values = list(lithology_description.dictionary.keys())
+    lithology_names = [
+        "Sandstone", "SS/Sh", "Shale", "Marl", "Dolomite", "Limestone",
+        "Chalk", "Halite", "Anhydrite", "Tuff", "Coal", "Basement"
+    ]
+    lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
 
     # Создаем новую фигуру с дополнительной колонкой для легенды
     fig_with_legend = make_subplots(
@@ -33,15 +44,11 @@ def add_legend_to_figure(fig, lithology_description, well_name):
         subplot_titles=[*[fig.layout.annotations[i].text for i in range(len(fig.layout.annotations))], "Facies Colors"]
     )
 
-    # Копируем существующие трейсы в новую фигуру
+    # Копируем существующие трейсы в новую фигуру (без легенды)
     for trace in fig.data:
         col = int(re.search(r'\d+', trace.xaxis).group()) if re.search(r'\d+', trace.xaxis) else 1
+        trace.showlegend = False  # Убираем легенду
         fig_with_legend.add_trace(trace, row=1, col=col)
-
-    # Генерация данных для легенды литологии
-    lithology_values = list(lithology_description.dictionary.keys())
-    lithology_names = [lithology_description.dictionary[val][0] for val in lithology_values]
-    lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
 
     # Создаем Heatmap для легенды литологии
     fig_with_legend.add_trace(
@@ -52,8 +59,7 @@ def add_legend_to_figure(fig, lithology_description, well_name):
             y=lithology_names,
             colorscale=list(zip(np.linspace(0, 1, len(lithology_colors)), lithology_colors)),
             showscale=False,  # Отключаем цветовую шкалу
-            hoverinfo='y',
-            hovertemplate="<b>Lithology</b>: %{y}<extra></extra>"
+            hoverinfo='none'
         ),
         row=1,
         col=num_cols + 1  # Добавляем в новую последнюю колонку
@@ -65,22 +71,48 @@ def add_legend_to_figure(fig, lithology_description, well_name):
     # Обновляем макет
     fig_with_legend.update_layout(
         height=fig.layout.height,
-        width=current_width + 200,  # Увеличиваем ширину для новой колонки
+        width=current_width + 250,  # Увеличиваем ширину для новой колонки
         title='',  # Убираем заголовок
         yaxis=dict(autorange='reversed')  # Инвертируем ось Y
     )
 
-    fig_with_legend.update_layout(
-        width=current_width + 150,
-        height=720,
-        title_text=f"Скважина {well_name}",
-        title_x=0.5
-    )
     # Поворачиваем названия колонок на 45 градусов
     for annotation in fig_with_legend.layout.annotations:
         annotation['textangle'] = 45
 
+    # Добавляем новые аннотации справа
+    annotations = []
+    for i, name in enumerate(lithology_names):
+        annotations.append(
+            dict(
+                x=1,  # Располагаем немного за пределами графика
+                y=(i + 0.5) / len(lithology_names),
+                xref='paper',
+                yref='paper',
+                text=name,
+                showarrow=False,
+                font=dict(size=12),
+                xanchor='left',
+                yanchor='middle'
+            )
+        )
+
+    # Объединяем существующие и новые аннотации
+    existing_annotations = list(fig_with_legend.layout.annotations) + annotations
+
+    fig_with_legend.update_layout(annotations=existing_annotations)
+
+    fig_with_legend.update_layout(
+        width=current_width + 250,  # Увеличиваем ширину для новой колонки
+        height=720,
+        title_text=f"Скважина {well_name}",
+        title_x=0.5
+    )
+
+    fig_with_legend.update_layout(showlegend=False)
+
     return fig_with_legend
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -124,6 +156,8 @@ class MainWindow(QMainWindow):
                 item.setCheckState(Qt.Unchecked)
                 self.ui.columnsListWidget.addItem(item)
 
+
+
     def save_to_csv(self):
         if self.test_well is not None:
             file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "CSV Files (*.csv)")
@@ -148,20 +182,19 @@ class MainWindow(QMainWindow):
 
         try:
             well_name = os.path.basename(self.file_path).replace(".las", "")
-
+            selected_columns = self.get_selected_columns()
             print("Загрузка данных скважины...")
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
             print("Данные загружены успешно.")
-            selected_columns = self.get_selected_columns()
-            test_well = test_well.dropna(subset=selected_columns)
+            test_well = test_well.iloc[2000:]
+            test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
+            # test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
                 test_well = test_well.tail(max_rows)
                 print(f"Сокращенные данные до {len(test_well)} строк.")
-
-
 
             if not selected_columns:
                 QMessageBox.information(self, "Колонки не выбраны", "Пожалуйста, выберите хотя бы одну колонку для построения графика.")
@@ -178,6 +211,8 @@ class MainWindow(QMainWindow):
                 height=720,
                 title_text=f"Скважина {well_name}",
                 title_x=0.5,
+                title_y=0.98,
+                margin=dict(t=55)
             )
             print("График сгенерирован.")
 

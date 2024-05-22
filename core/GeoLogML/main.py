@@ -153,14 +153,16 @@ class MainWindow(QMainWindow):
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
             print("Данные загружены успешно.")
-            test_well = test_well.dropna()
+            selected_columns = self.get_selected_columns()
+            test_well = test_well.dropna(subset=selected_columns)
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
-                test_well = test_well.head(max_rows)
+                test_well = test_well.tail(max_rows)
                 print(f"Сокращенные данные до {len(test_well)} строк.")
 
-            selected_columns = self.get_selected_columns()
+
+
             if not selected_columns:
                 QMessageBox.information(self, "Колонки не выбраны", "Пожалуйста, выберите хотя бы одну колонку для построения графика.")
                 return
@@ -181,7 +183,7 @@ class MainWindow(QMainWindow):
 
             print("Преобразование графика в HTML...")
             config = {
-                'displayModeBar': False
+                'displaylogo': False
             }
             raw_html = plot(fig, include_plotlyjs='cdn', output_type='div', config=config)
             print("HTML сгенерирован.")
@@ -203,13 +205,13 @@ class MainWindow(QMainWindow):
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
             print("Данные загружены успешно.")
-
-            test_well = test_well.iloc[10:]
-            test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
+            test_well = test_well.iloc[5000:]
+            test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
+            #test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
-                test_well = test_well.head(max_rows)
+                test_well = test_well.tail(max_rows)
                 print(f"Сокращенные данные до {len(test_well)} строк.")
 
             print("Получение предсказаний...")
@@ -235,14 +237,14 @@ class MainWindow(QMainWindow):
                 fig = cwp.plot_logs(
                     df=test_well,
                     logs=selected_columns,
-                    lithology_logs=['Predicted Facies'],
+                    lithology_logs=['Facies'],
                     lithology_description=LithologyDescription(unique_lithology_description),
                     show_fig=False
                 )
                 well_name = os.path.basename(self.file_path).replace(".las", "")
                 fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
                 config = {
-                    'displayModeBar': False
+                    'displaylogo': False
                 }
                 print("Преобразование графика в HTML...")
                 raw_html = plot(fig_with_legend, include_plotlyjs='cdn', output_type='div', config=config)

@@ -10,8 +10,8 @@ class Ui_MainWindow(QMainWindow):
 
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.setWindowTitle("GeoLogML")  # Установка названия окна
-        MainWindow.resize(1200, 1100)
+        MainWindow.setWindowTitle("GeoLogML")
+        MainWindow.resize(1200, 700)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.centralwidget.setStyleSheet("background-color: white;")

@@ -2,6 +2,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.multiclass import OneVsRestClassifier
 
 class LithologyModel:
     def __init__(self, model_path, scaler_path):

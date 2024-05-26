@@ -10,8 +10,7 @@ class Constants:
         7: '#ff00ff',
         8: '#9467bd',
         9: '#d62728',
-        10: '#8c564b',
-        11: '#7f7f7f'
+        10: '#8c564b'
     }
 
     LITHOLOGY_NUMBERS = {
@@ -26,7 +25,6 @@ class Constants:
         86000: 8,
         99000: 9,
         90000: 10,
-        93000: 11
     }
 
     LITHOLOGY_KEYS = {
@@ -40,8 +38,7 @@ class Constants:
         'Halite': 88000,
         'Anhydrite': 86000,
         'Tuff': 99000,
-        'Coal': 90000,
-        'Basement': 93000
+        'Coal': 90000
     }
 
     FEATURES = [

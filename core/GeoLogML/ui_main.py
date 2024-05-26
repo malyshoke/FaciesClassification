@@ -1,95 +1,47 @@
-# -*- coding: utf-8 -*-
-
-################################################################################
-## Form generated from reading UI file 'ui_main.ui'
-##
-## Created by: Qt User Interface Compiler version 6.7.0
-##
-## WARNING! All changes made in this file will be lost when recompiling UI file!
-################################################################################
-
-from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
-    QMetaObject, QObject, QPoint, QRect,
-    QSize, QTime, QUrl, Qt)
-from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
-    QFont, QFontDatabase, QGradient, QIcon,
-    QImage, QKeySequence, QLinearGradient, QPainter,
-    QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QSizePolicy,
-    QVBoxLayout, QWidget)
-
-from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMainWindow, QPushButton, QWidget, QFileDialog, QListWidget, QListWidgetItem
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, QUrl, Qt
 
+class Ui_MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
 
-class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
-        if not MainWindow.objectName():
-            MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(800, 600)
-        MainWindow.setStyleSheet(u"background-color: rgb(227, 227, 227);")
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.resize(1200, 1100)
         self.centralwidget = QWidget(MainWindow)
-        self.centralwidget.setObjectName(u"centralwidget")
+        self.centralwidget.setObjectName("centralwidget")
 
-        # Настройка QWebEngineView
         self.webEngineView = QWebEngineView(self.centralwidget)
-        self.webEngineView.setObjectName(u"webEngineView")
-        self.webEngineView.setGeometry(QRect(200, 30, 550, 530))  # Задаем размер и позицию
+        self.webEngineView.setGeometry(QRect(300, 10, 1000, 900))
+        # Подключение обработчиков событий
+        self.webEngineView.loadStarted.connect(self.onLoadStarted)
+        self.webEngineView.loadProgress.connect(self.onLoadProgress)
+        self.webEngineView.loadFinished.connect(self.onLoadFinished)
 
-        # Оставшиеся элементы в отдельном layout
-        self.verticalLayoutWidget = QWidget(self.centralwidget)
-        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(10, 30, 181, 91))
+        self.pushButtonLoad = QPushButton("Выбрать LAS файл", self.centralwidget)
+        self.pushButtonLoad.setGeometry(QRect(10, 10, 280, 50))
 
-        self.ButtonLayout = QVBoxLayout(self.verticalLayoutWidget)
-        self.ButtonLayout.setSpacing(0)
-        self.ButtonLayout.setObjectName(u"ButtonLayout")
-        self.ButtonLayout.setContentsMargins(0, 0, 0, 0)
+        self.pushButton = QPushButton("Построить график каротажа", self.centralwidget)
+        self.pushButton.setGeometry(QRect(10, 70, 280, 50))
 
-        self.openButton = QPushButton(self.verticalLayoutWidget)
-        self.openButton.setObjectName(u"openButton")
-        font = QFont()
-        font.setFamilies([u"Yu Gothic UI Semibold"])
-        font.setBold(True)
-        self.openButton.setFont(font)
-        self.openButton.setFocusPolicy(Qt.FocusPolicy.WheelFocus)
-        self.openButton.setAutoDefault(False)
-        self.openButton.setFlat(False)
-        self.ButtonLayout.addWidget(self.openButton)
+        self.pushButtonSimple = QPushButton("Получить предсказание литологии", self.centralwidget)
+        self.pushButtonSimple.setGeometry(QRect(10, 130, 280, 50))
 
-        self.saveCSVButton = QPushButton(self.verticalLayoutWidget)
-        self.saveCSVButton.setObjectName(u"saveCSVButton")
-        self.saveCSVButton.setFont(font)
-        self.saveCSVButton.setFocusPolicy(Qt.FocusPolicy.WheelFocus)
-        self.saveCSVButton.setAutoDefault(False)
-        self.saveCSVButton.setFlat(False)
-        self.ButtonLayout.addWidget(self.saveCSVButton)
-
-        self.saveInferance = QPushButton(self.verticalLayoutWidget)
-        self.saveInferance.setObjectName(u"saveInferance")
-        self.saveInferance.setFont(font)
-        self.saveInferance.setFocusPolicy(Qt.FocusPolicy.WheelFocus)
-        self.saveInferance.setAutoDefault(False)
-        self.saveInferance.setFlat(False)
-        self.ButtonLayout.addWidget(self.saveInferance)
+        self.columnsListWidget = QListWidget(self.centralwidget)
+        self.columnsListWidget.setGeometry(QRect(10, 190, 280, 200))
 
         MainWindow.setCentralWidget(self.centralwidget)
 
-        self.retranslateUi(MainWindow)
+    def onLoadStarted(self):
+        print("Загрузка начата.")
 
-        self.openButton.setDefault(False)
-        self.saveCSVButton.setDefault(False)
-        self.saveInferance.setDefault(False)
+    def onLoadProgress(self, progress):
+        print(f"Загрузка прогресс: {progress}%")
 
-        QMetaObject.connectSlotsByName(MainWindow)
-
-    # setupUi
-
-    def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"GeoLogML", None))
-        self.openButton.setText(QCoreApplication.translate("MainWindow", u"\u041e\u0442\u043a\u0440\u044b\u0442\u044c LAS-\u0444\u0430\u0439\u043b", None))
-        self.saveCSVButton.setText(QCoreApplication.translate("MainWindow", u"\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0432 csv", None))
-        self.saveInferance.setText(QCoreApplication.translate("MainWindow", u"\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043f\u0440\u043e\u0433\u043d\u043e\u0437", None))
-    # retranslateUi
-
+    def onLoadFinished(self, ok):
+        if ok:
+            print("Загрузка завершена успешно.")
+        else:
+            print("Загрузка завершена с ошибкой.")

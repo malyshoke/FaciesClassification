@@ -1,7 +1,5 @@
 import sys
 import os
-import re
-import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QListWidgetItem
 from PySide6.QtCore import QUrl, Qt
@@ -9,9 +7,6 @@ from ui_mainwindow import Ui_MainWindow
 from cegal.welltools.wells import Well
 from cegal.welltools.plotting import CegalWellPlotter as cwp
 from plotly.offline import plot
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-import joblib
 from constants import Constants
 from LithologyModel import LithologyModel
 from PySide6.QtWidgets import QMessageBox
@@ -32,7 +27,7 @@ def add_legend_to_figure(fig, lithology_description, well_name):
     lithology_values = list(lithology_description.dictionary.keys())
     lithology_names = [
         "Sandstone", "SS/Sh", "Shale", "Marl", "Dolomite", "Limestone",
-        "Chalk", "Halite", "Anhydrite", "Tuff", "Coal", "Basement"
+        "Chalk", "Halite", "Anhydrite", "Tuff", "Coal"
     ]
     lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
 
@@ -124,7 +119,7 @@ class MainWindow(QMainWindow):
         self.test_well = None
 
         # Инициализация LithologyModel
-        self.lithology_model = LithologyModel('catboost_model.pkl', 'new_scaler.pkl')
+        self.lithology_model = LithologyModel('ovr_classifier.pkl', 'scaler.pkl')
 
         lithology_description_dict = {
             Constants.LITHOLOGY_NUMBERS[v]: (k, Constants.LITHOLOGY_COLORS[Constants.LITHOLOGY_NUMBERS[v]])
@@ -187,9 +182,9 @@ class MainWindow(QMainWindow):
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
             print("Данные загружены успешно.")
-            test_well = test_well.iloc[2000:]
+           # test_well = test_well.iloc[2000:]
             test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
-            # test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
+            #test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
@@ -220,12 +215,20 @@ class MainWindow(QMainWindow):
             config = {
                 'displaylogo': False
             }
-            raw_html = plot(fig, include_plotlyjs='cdn', output_type='div', config=config)
+            plotly_js_path = "./plotly-2.32.0.min.js"  # Замените на реальный путь к plotly.js
+
+            raw_html = plot(fig, include_plotlyjs=False, output_type='div', config=config)
+            raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
+
+            with open("log_plot.html", "w") as debug_file:
+                debug_file.write(raw_html)
+
             print("HTML сгенерирован.")
 
             print("Загрузка HTML в QWebEngineView...")
-            self.ui.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
-            print("HTML загружен в QWebEngineView.")
+            #self.ui.webEngineView.setHtml(raw_html)
+            self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("log_plot.html")))
+
 
         except Exception as e:
             print("Ошибка при построении графика:", str(e))
@@ -282,12 +285,19 @@ class MainWindow(QMainWindow):
                     'displaylogo': False
                 }
                 print("Преобразование графика в HTML...")
-                raw_html = plot(fig_with_legend, include_plotlyjs='cdn', output_type='div', config=config)
+                plotly_js_path = "./plotly-2.32.0.min.js"  # Замените на реальный путь к plotly.js
+
+                raw_html = plot(fig_with_legend, include_plotlyjs=False, output_type='div', config=config)
+                raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
+
+                with open("prediction.html", "w") as debug_file:
+                    debug_file.write(raw_html)
+
                 print("HTML сгенерирован.")
 
                 print("Загрузка HTML в QWebEngineView...")
-                self.ui.webEngineView.setHtml(raw_html, baseUrl=QUrl("https://cdn.plot.ly/plotly-latest.min.js"))
-                print("HTML загружен в QWebEngineView.")
+                #self.ui.webEngineView.setHtml(raw_html)
+                self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("prediction.html")))
 
         except Exception as e:
             print("Ошибка при выполнении предсказания:", str(e))

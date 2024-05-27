@@ -54,9 +54,9 @@ class Constants:
         'NPHI'
     ]
     exclude_columns = [
+        'DEPTH_MD',
         'FORCE_2020_LITHOFACIES_CONFIDENCE',
         'FORCE_2020_LITHOFACIES_LITHOLOGY',
-        'DEPTH_MD',
         'X_LOC',
         'Y_LOC',
         'Z_LOC'

@@ -62,7 +62,7 @@ class Ui_MainWindow(QMainWindow):
         self.columnsListWidget.setStyleSheet(self.list_widget_style())
         self.columnsListWidget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        self.saveButton = QPushButton("Сохранить в CSV", self.centralwidget)
+        self.saveButton = QPushButton("Сохранить в Excel", self.centralwidget)
         self.saveButton.setGeometry(QRect(10, 460, 280, 40))
         self.saveButton.setStyleSheet(self.button_style())
 
@@ -78,6 +78,7 @@ class Ui_MainWindow(QMainWindow):
         self.legendLabel.setGeometry(QRect(300, 920, 1000, 100))  # Регулируйте размер и позицию под ваш интерфейс
         self.legendLabel.setText(self.generate_legend_html())
         self.legendLabel.setStyleSheet("font-size: 14px;")  # При необходимости настройте стиль
+
 
         MainWindow.setCentralWidget(self.centralwidget)
 

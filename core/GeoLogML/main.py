@@ -1,8 +1,13 @@
 import sys
 import os
+
+import openpyxl
 import pandas as pd
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QListWidgetItem
 from PySide6.QtCore import QUrl, Qt
+from openpyxl.utils import get_column_letter
+
+import constants
 from ui_mainwindow import Ui_MainWindow
 from cegal.welltools.wells import Well
 from cegal.welltools.plotting import CegalWellPlotter as cwp
@@ -10,14 +15,57 @@ from plotly.offline import plot
 from constants import Constants
 from LithologyModel import LithologyModel
 from PySide6.QtWidgets import QMessageBox
-
-class LithologyDescription:
-    def __init__(self, lithology_dict):
-        self.dictionary = lithology_dict
 import re
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from openpyxl.styles import Font, Alignment, PatternFill
+# SQLAlchemy и psycopg2 для работы с базой данных
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+
+# Настройки подключения к базе данных
+DATABASE_URL = "postgresql+psycopg2://kate:kate@localhost:5432/geologml"
+
+# Определение моделей SQLAlchemy
+Base = declarative_base()
+
+class Wells(Base):
+    __tablename__ = 'wells'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    logs = relationship('Log', back_populates='well')
+
+class Log(Base):
+    __tablename__ = 'logs'
+    id = Column(Integer, primary_key=True)
+    well_id = Column(Integer, ForeignKey('wells.id'))
+    depth = Column(Float, nullable=False)
+    cali = Column(Float)
+    bs = Column(Float)
+    dcal = Column(Float)
+    rop = Column(Float)
+    rdep = Column(Float)
+    rsha = Column(Float)
+    rmed = Column(Float)
+    sp = Column(Float)
+    dtc = Column(Float)
+    nphi = Column(Float)
+    pef = Column(Float)
+    gr = Column(Float)
+    rhob = Column(Float)
+    drho = Column(Float)
+    predicted_facies = Column(String)
+    well = relationship('Wells', back_populates='logs')
+
+# Создание и инициализация базы данных
+engine = create_engine(DATABASE_URL)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+session = Session()
+class LithologyDescription:
+    def __init__(self, lithology_dict):
+        self.dictionary = lithology_dict
 
 
 def add_legend_to_figure(fig, lithology_description, well_name):
@@ -109,6 +157,41 @@ def add_legend_to_figure(fig, lithology_description, well_name):
     return fig_with_legend
 
 
+def save_to_excel(dataframe, filename, title, exclude_columns):
+    # Исключение нежелательных колонок
+    dataframe = dataframe.drop(columns=exclude_columns, errors='ignore')
+    dataframe = dataframe.iloc[8000:]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Report"
+
+    ws.merge_cells('A1:Q1')
+    title_cell = ws.cell(row=1, column=1, value=title)
+    title_cell.font = Font(bold=True, size=14)
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    header_font = Font(bold=True, size=12, color="FFFFFF")
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+
+    headers = list(dataframe.columns)
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=2, column=col_num, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        ws.column_dimensions[get_column_letter(col_num)].width = 12
+
+    for row_num, row_data in enumerate(dataframe.itertuples(index=False), 3):
+        for col_num, cell_value in enumerate(row_data, 1):
+            ws.cell(row=row_num, column=col_num, value=cell_value)
+
+
+    wb.save(filename)
+    print(f"Отчет сохранен в {filename}")
+
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -118,7 +201,6 @@ class MainWindow(QMainWindow):
         self.columns = []
         self.test_well = None
 
-        # Инициализация LithologyModel
         self.lithology_model = LithologyModel('ovr_classifier.pkl', 'scaler.pkl')
 
         lithology_description_dict = {
@@ -126,13 +208,44 @@ class MainWindow(QMainWindow):
             for k, v in Constants.LITHOLOGY_KEYS.items()
         }
         self.lithology_description = LithologyDescription(lithology_description_dict)
-
-        # Подключение обработчиков событий
+        self.ui.saveButton.clicked.connect(self.save_predictions_to_excel)
         self.ui.pushButtonLoad.clicked.connect(self.load_las_file)
         self.ui.pushButton.clicked.connect(self.plot_full_graph)
         self.ui.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
-        self.ui.saveButton.clicked.connect(self.save_to_csv)
 
+    def save_logs_to_database(self, test_well):
+        well_name = os.path.basename(self.file_path).replace(".las", "")
+        existing_well = session.query(Wells).filter_by(name=well_name).first()
+        if not existing_well:
+            new_well = Wells(name=well_name)
+            session.add(new_well)
+            session.commit()
+            well_id = new_well.id
+        else:
+            well_id = existing_well.id
+
+        for index, row in test_well.iterrows():
+            new_log = Log(
+                well_id=well_id,
+                depth=row['DEPTH_MD'],
+                cali=row['CALI'],
+                bs=row['BS'],
+                dcal=row['DCAL'],
+                rop=row['ROP'],
+                rdep=row['RDEP'],
+                rsha=row['RSHA'],
+                rmed=row['RMED'],
+                sp=row['SP'],
+                dtc=row['DTC'],
+                nphi=row['NPHI'],
+                pef=row['PEF'],
+                gr=row['GR'],
+                rhob=row['RHOB'],
+                drho=row['DRHO'],
+                predicted_facies=row['Predicted_Class']
+            )
+            session.add(new_log)
+        session.commit()
     def load_las_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать LAS файл", "", "LAS Files (*.las)")
         if file_path:
@@ -152,15 +265,16 @@ class MainWindow(QMainWindow):
                 self.ui.columnsListWidget.addItem(item)
 
 
-
-    def save_to_csv(self):
-        if self.test_well is not None:
-            file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "CSV Files (*.csv)")
+    def save_predictions_to_excel(self):
+        if self.test_well is not None and self.predictions is not None:
+            file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "Excel Files (*.xlsx)")
             if file_name:
-                self.test_well.to_csv(file_name, index=False)
-                print(f"Данные сохранены в {file_name}")
+                self.test_well['Predicted Facies'] = self.predictions
+                save_to_excel(self.test_well, file_name, "GeoLogML Report", exclude_columns=Constants.exclude_columns[1:])
+                print(f"Отчет сохранен в {file_name}")
         else:
-            QMessageBox.warning(self, "Нет данных", "Загрузите данные перед сохранением в CSV.")
+            QMessageBox.warning(self, "Нет данных", "Загрузите данные и получите предсказания перед сохранением в Excel.")
+
 
     def get_selected_columns(self):
         selected_columns = []
@@ -181,10 +295,9 @@ class MainWindow(QMainWindow):
             print("Загрузка данных скважины...")
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
+            print(test_well.head(5))
             print("Данные загружены успешно.")
-           # test_well = test_well.iloc[2000:]
             test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
-            #test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
@@ -215,7 +328,7 @@ class MainWindow(QMainWindow):
             config = {
                 'displaylogo': False
             }
-            plotly_js_path = "./plotly-2.32.0.min.js"  # Замените на реальный путь к plotly.js
+            plotly_js_path = "./plotly-2.32.0.min.js"
 
             raw_html = plot(fig, include_plotlyjs=False, output_type='div', config=config)
             raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
@@ -226,9 +339,7 @@ class MainWindow(QMainWindow):
             print("HTML сгенерирован.")
 
             print("Загрузка HTML в QWebEngineView...")
-            #self.ui.webEngineView.setHtml(raw_html)
             self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("log_plot.html")))
-
 
         except Exception as e:
             print("Ошибка при построении графика:", str(e))
@@ -242,10 +353,11 @@ class MainWindow(QMainWindow):
             print("Загрузка данных скважины...")
             force_well = Well(filename=self.file_path, path=None)
             test_well = pd.DataFrame(force_well.df())
+            print(test_well.columns)
             print("Данные загружены успешно.")
+            self.predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
             test_well = test_well.iloc[5000:]
             test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
-            #test_well = test_well.iloc[np.arange(len(test_well)) % 5 != 0]
             max_rows = 10000
             if len(test_well) > max_rows:
                 print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
@@ -259,14 +371,18 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Недостающие колонки",
                                      f"Отсутствуют следующие необходимые столбцы: {', '.join(missing)}")
 
-            # Предобработка данных и получение предсказаний
             predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
 
             if predictions is not None:
                 test_well['Predicted_Class'] = predictions
+                print("Предсказания успешно сохранены в базу данных.")
+
+
                 test_well['Facies'] = test_well['Predicted_Class'].map(Constants.LITHOLOGY_KEYS).map(Constants.LITHOLOGY_NUMBERS)
                 test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(Constants.LITHOLOGY_NUMBERS)
                 print("Предсказания обработаны")
+
+                self.save_logs_to_database(test_well)
                 unique_facies = test_well['Predicted Facies'].unique()
                 unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in unique_facies if
                                                 key in self.lithology_description.dictionary}
@@ -285,7 +401,7 @@ class MainWindow(QMainWindow):
                     'displaylogo': False
                 }
                 print("Преобразование графика в HTML...")
-                plotly_js_path = "./plotly-2.32.0.min.js"  # Замените на реальный путь к plotly.js
+                plotly_js_path = "./plotly-2.32.0.min.js"
 
                 raw_html = plot(fig_with_legend, include_plotlyjs=False, output_type='div', config=config)
                 raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
@@ -296,7 +412,6 @@ class MainWindow(QMainWindow):
                 print("HTML сгенерирован.")
 
                 print("Загрузка HTML в QWebEngineView...")
-                #self.ui.webEngineView.setHtml(raw_html)
                 self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("prediction.html")))
 
         except Exception as e:

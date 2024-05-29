@@ -13,6 +13,9 @@
   <property name="windowTitle">
    <string>GeoLogML</string>
   </property>
+  <property name="styleSheet">
+   <string notr="true">  background-color: #ffffff;  </string>
+  </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QWidget" name="widget" native="true">
     <property name="geometry">
@@ -24,7 +27,7 @@
      </rect>
     </property>
    </widget>
-   <widget class="QWidget" name="">
+   <widget class="QWidget" name="layoutWidget">
     <property name="geometry">
      <rect>
       <x>10</x>
@@ -40,15 +43,20 @@
         <layout class="QHBoxLayout" name="horizontalLayout">
          <item>
           <widget class="QPushButton" name="pushButton">
+           <property name="styleSheet">
+            <string notr="true">QPushButton {
+    background-color: #f0f0f0;  
+    border: 2px solid #dcdcdc; 
+    border-radius: 5px;      
+    padding: 2px;
+}
+QPushButton:hover {
+    background-color: #e8e8e8;
+}
+</string>
+           </property>
            <property name="text">
             <string>Открыть LAS-файлы</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="label">
-           <property name="text">
-            <string>TextLabel</string>
            </property>
           </widget>
          </item>
@@ -58,15 +66,20 @@
         <layout class="QHBoxLayout" name="horizontalLayout_2">
          <item>
           <widget class="QPushButton" name="pushButton_2">
+           <property name="styleSheet">
+            <string notr="true">QPushButton {
+    background-color: #f0f0f0;  
+    border: 2px solid #dcdcdc; 
+    border-radius: 5px;      
+    padding: 2px;
+}
+QPushButton:hover {
+    background-color: #e8e8e8;
+}
+</string>
+           </property>
            <property name="text">
             <string>Сохранить в CSV</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="label_2">
-           <property name="text">
-            <string>TextLabel</string>
            </property>
           </widget>
          </item>
@@ -100,6 +113,18 @@
      </item>
      <item>
       <widget class="QPushButton" name="pushButton_3">
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: #f0f0f0;  
+    border: 2px solid #dcdcdc; 
+    border-radius: 5px;      
+    padding: 2px;
+}
+QPushButton:hover {
+    background-color: #e8e8e8;
+}
+</string>
+       </property>
        <property name="text">
         <string>Отрисовать кривые</string>
        </property>
@@ -107,6 +132,18 @@
      </item>
      <item>
       <widget class="QPushButton" name="pushButton_4">
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: #f0f0f0;  
+    border: 2px solid #dcdcdc; 
+    border-radius: 5px;      
+    padding: 2px;
+}
+QPushButton:hover {
+    background-color: #e8e8e8;
+}
+</string>
+       </property>
        <property name="text">
         <string>Получить литологический прогноз</string>
        </property>

@@ -50,7 +50,7 @@ class Ui_MainWindow(QMainWindow):
         self.pushButton.setGeometry(QRect(10, 60, 280, 40))
         self.pushButton.setStyleSheet(self.button_style())
 
-        self.pushButtonSimple = QPushButton("Получить предсказание литологии", self.centralwidget)
+        self.pushButtonSimple = QPushButton("Получить предсказание литофаций", self.centralwidget)
         self.pushButtonSimple.setGeometry(QRect(10, 110, 280, 40))
         self.pushButtonSimple.setStyleSheet(self.button_style())
 

@@ -23,6 +23,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # SQLAlchemy и psycopg2 для работы с базой данных
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+import lasio
 
 # Настройки подключения к базе данных
 DATABASE_URL = "postgresql+psycopg2://kate:kate@localhost:5432/geologml"
@@ -157,23 +158,31 @@ def add_legend_to_figure(fig, lithology_description, well_name):
     return fig_with_legend
 
 
-def save_to_excel(dataframe, filename, title, exclude_columns):
+
+def save_to_excel(dataframe, file_path, title, exclude_columns):
+    # Извлечение названия скважины из пути к файлу
+    well_name = os.path.basename(file_path).replace(".las", "")
     # Исключение нежелательных колонок
     dataframe = dataframe.drop(columns=exclude_columns, errors='ignore')
     dataframe = dataframe.iloc[8000:]
+
+    # Создание новой книги Excel
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Report"
 
+    # Объединение ячеек для заголовка
     ws.merge_cells('A1:Q1')
-    title_cell = ws.cell(row=1, column=1, value=title)
+    title_cell = ws.cell(row=1, column=1, value=f"{title} - {well_name}")
     title_cell.font = Font(bold=True, size=14)
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
 
+    # Настройка стилей для заголовков колонок
     header_font = Font(bold=True, size=12, color="FFFFFF")
-    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+    header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
     header_alignment = Alignment(horizontal="center", vertical="center")
 
+    # Заполнение заголовков колонок
     headers = list(dataframe.columns)
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=2, column=col_num, value=header)
@@ -182,13 +191,15 @@ def save_to_excel(dataframe, filename, title, exclude_columns):
         cell.alignment = header_alignment
         ws.column_dimensions[get_column_letter(col_num)].width = 12
 
+    # Заполнение данных из DataFrame
     for row_num, row_data in enumerate(dataframe.itertuples(index=False), 3):
         for col_num, cell_value in enumerate(row_data, 1):
             ws.cell(row=row_num, column=col_num, value=cell_value)
 
-
-    wb.save(filename)
-    print(f"Отчет сохранен в {filename}")
+    # Сохранение файла с названием скважины
+    save_filename = f"{well_name}.xlsx"
+    wb.save(save_filename)
+    print(f"Отчет сохранен в {save_filename}")
 
 
 
@@ -270,6 +281,7 @@ class MainWindow(QMainWindow):
             file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "Excel Files (*.xlsx)")
             if file_name:
                 self.test_well['Predicted Facies'] = self.predictions
+                self.test_well = self.test_well.iloc[5000:]
                 save_to_excel(self.test_well, file_name, "GeoLogML Report", exclude_columns=Constants.exclude_columns[1:])
                 print(f"Отчет сохранен в {file_name}")
         else:

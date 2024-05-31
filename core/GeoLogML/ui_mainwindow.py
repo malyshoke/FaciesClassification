@@ -37,7 +37,7 @@ class Ui_MainWindow(QMainWindow):
         self.centralwidget.setStyleSheet("background-color: white;")
 
         self.webEngineView = QWebEngineView(self.centralwidget)
-        self.webEngineView.setGeometry(QRect(300, 10, 1010, 915))
+        self.webEngineView.setGeometry(QRect(300, 10, 1050, 950))
         self.webEngineView.loadStarted.connect(self.onLoadStarted)
         self.webEngineView.loadProgress.connect(self.onLoadProgress)
         self.webEngineView.loadFinished.connect(self.onLoadFinished)
@@ -65,6 +65,10 @@ class Ui_MainWindow(QMainWindow):
         self.saveButton = QPushButton("Сохранить в Excel", self.centralwidget)
         self.saveButton.setGeometry(QRect(10, 460, 280, 40))
         self.saveButton.setStyleSheet(self.button_style())
+
+        self.saveToDbButton = QPushButton("Сохранить в базу данных", self.centralwidget)
+        self.saveToDbButton.setGeometry(QRect(10, 510, 280, 40))
+        self.saveToDbButton.setStyleSheet(self.button_style())
 
         # Создание и стилизация круглого прогресс бара
         self.progressBar = QProgressBar(self.centralwidget)

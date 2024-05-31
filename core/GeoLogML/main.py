@@ -1,6 +1,8 @@
 import sys
 import os
+from datetime import datetime
 
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime
 import openpyxl
 import pandas as pd
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QListWidgetItem
@@ -35,6 +37,9 @@ class Wells(Base):
     __tablename__ = 'wells'
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
+    start_depth = Column(Float, nullable=False)
+    stop_depth = Column(Float, nullable=False)
+    log_export_date = Column(DateTime, nullable=False)
     logs = relationship('Log', back_populates='well')
 
 class Log(Base):
@@ -59,6 +64,7 @@ class Log(Base):
     predicted_facies = Column(String)
     well = relationship('Wells', back_populates='logs')
 
+
 # Создание и инициализация базы данных
 engine = create_engine(DATABASE_URL)
 Base.metadata.create_all(engine)
@@ -75,8 +81,8 @@ def add_legend_to_figure(fig, lithology_description, well_name):
     num_cols = len(x_axes)
     lithology_values = list(lithology_description.dictionary.keys())
     lithology_names = [
-        "Sandstone", "SS/Sh", "Shale", "Marl", "Dolomite", "Limestone",
-        "Chalk", "Halite", "Anhydrite", "Tuff", "Coal"
+        "Песчаник", "Песчан/Сланец", "Сланец", "Мергель", "Доломит", "Известняк",
+        "Мел", "Галит", "Ангидрит", "Туф", "Уголь"
     ]
     lithology_colors = [lithology_description.dictionary[val][1] for val in lithology_values]
 
@@ -159,12 +165,14 @@ def add_legend_to_figure(fig, lithology_description, well_name):
 
 
 
-def save_to_excel(dataframe, file_path, title, exclude_columns):
-    # Извлечение названия скважины из пути к файлу
-    well_name = os.path.basename(file_path).replace(".las", "")
+def save_to_excel(dataframe, well_name, file_path, title, exclude_columns):
     # Исключение нежелательных колонок
     dataframe = dataframe.drop(columns=exclude_columns, errors='ignore')
-    dataframe = dataframe.iloc[8000:]
+    if 'DEPTH_MD' in dataframe.columns:
+        columns = ['DEPTH_MD'] + [col for col in dataframe.columns if col != 'DEPTH_MD']
+        dataframe = dataframe[columns]
+
+    dataframe = dataframe.iloc[:, :-2]
 
     # Создание новой книги Excel
     wb = openpyxl.Workbook()
@@ -173,7 +181,7 @@ def save_to_excel(dataframe, file_path, title, exclude_columns):
 
     # Объединение ячеек для заголовка
     ws.merge_cells('A1:Q1')
-    title_cell = ws.cell(row=1, column=1, value=f"{title} - {well_name}")
+    title_cell = ws.cell(row=1, column=1, value=f"Скважина {well_name} - {title}")
     title_cell.font = Font(bold=True, size=14)
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
 
@@ -196,10 +204,9 @@ def save_to_excel(dataframe, file_path, title, exclude_columns):
         for col_num, cell_value in enumerate(row_data, 1):
             ws.cell(row=row_num, column=col_num, value=cell_value)
 
-    # Сохранение файла с названием скважины
-    save_filename = f"{well_name}.xlsx"
-    wb.save(save_filename)
-    print(f"Отчет сохранен в {save_filename}")
+    # Сохранение файла
+    wb.save(file_path)
+    print(f"Отчет сохранен в {file_path}")
 
 
 
@@ -223,40 +230,63 @@ class MainWindow(QMainWindow):
         self.ui.pushButtonLoad.clicked.connect(self.load_las_file)
         self.ui.pushButton.clicked.connect(self.plot_full_graph)
         self.ui.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
+        self.ui.saveToDbButton.clicked.connect(self.save_logs_to_database)
 
-    def save_logs_to_database(self, test_well):
+    def save_logs_to_database(self):
+        if self.test_well is None:
+            QMessageBox.warning(self, "Нет данных", "Загрузите данные перед сохранением в базу данных.")
+            return
+
         well_name = os.path.basename(self.file_path).replace(".las", "")
         existing_well = session.query(Wells).filter_by(name=well_name).first()
+
+        las = lasio.read(self.file_path)
+        start = las.well['STRT'].value
+        stop = las.well['STOP'].value
+        datetime_str = las.well['DATE'].value.strip()
+        datetime_str = datetime_str.split(' :')[0].strip()
+        print(datetime_str)
+        datetime_format = "%Y-%m-%d %H:%M:%S"
+        datetime_obj = datetime.strptime(datetime_str, datetime_format)
+
         if not existing_well:
-            new_well = Wells(name=well_name)
+            new_well = Wells(
+                name=well_name,
+                start_depth=start,
+                stop_depth=stop,
+                log_export_date=datetime_obj
+            )
             session.add(new_well)
             session.commit()
             well_id = new_well.id
         else:
             well_id = existing_well.id
 
-        for index, row in test_well.iterrows():
+        for index, row in self.test_well.iterrows():
             new_log = Log(
                 well_id=well_id,
                 depth=row['DEPTH_MD'],
-                cali=row['CALI'],
-                bs=row['BS'],
-                dcal=row['DCAL'],
-                rop=row['ROP'],
-                rdep=row['RDEP'],
-                rsha=row['RSHA'],
-                rmed=row['RMED'],
-                sp=row['SP'],
-                dtc=row['DTC'],
-                nphi=row['NPHI'],
-                pef=row['PEF'],
-                gr=row['GR'],
-                rhob=row['RHOB'],
-                drho=row['DRHO'],
-                predicted_facies=row['Predicted_Class']
+                cali=row.get('CALI'),
+                bs=row.get('BS'),
+                dcal=row.get('DCAL'),
+                rop=row.get('ROP'),
+                rdep=row.get('RDEP'),
+                rsha=row.get('RSHA'),
+                rmed=row.get('RMED'),
+                sp=row.get('SP'),
+                dtc=row.get('DTC'),
+                nphi=row.get('NPHI'),
+                pef=row.get('PEF'),
+                gr=row.get('GR'),
+                rhob=row.get('RHOB'),
+                drho=row.get('DRHO'),
+                predicted_facies=row.get('Predicted_Class')
             )
             session.add(new_log)
         session.commit()
+        QMessageBox.information(self, "Успех", "Данные успешно сохранены в базу данных.")
+
+
     def load_las_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать LAS файл", "", "LAS Files (*.las)")
         if file_path:
@@ -275,18 +305,24 @@ class MainWindow(QMainWindow):
                 item.setCheckState(Qt.Unchecked)
                 self.ui.columnsListWidget.addItem(item)
 
-
     def save_predictions_to_excel(self):
         if self.test_well is not None and self.predictions is not None:
-            file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", "", "Excel Files (*.xlsx)")
+            # Извлечение названия скважины из пути к файлу
+            well_name = os.path.basename(self.file_path).replace(".las", "")
+            default_file_name = f"{well_name}.xlsx"
+            file_name, _ = QFileDialog.getSaveFileName(self, "Сохранить файл", default_file_name,
+                                                       "Excel Files (*.xlsx)")
             if file_name:
-                self.test_well['Predicted Facies'] = self.predictions
-                self.test_well = self.test_well.iloc[5000:]
-                save_to_excel(self.test_well, file_name, "GeoLogML Report", exclude_columns=Constants.exclude_columns[1:])
+                if not file_name.endswith(".xlsx"):
+                    file_name += ".xlsx"
+                test_well = self.test_well
+                print(test_well)
+                save_to_excel(test_well, well_name, file_name, "GeoLogML Report",
+                              exclude_columns=Constants.exclude_columns[1:])
                 print(f"Отчет сохранен в {file_name}")
         else:
-            QMessageBox.warning(self, "Нет данных", "Загрузите данные и получите предсказания перед сохранением в Excel.")
-
+            QMessageBox.warning(self, "Нет данных",
+                                "Загрузите данные и получите предсказания перед сохранением в Excel.")
 
     def get_selected_columns(self):
         selected_columns = []
@@ -338,7 +374,8 @@ class MainWindow(QMainWindow):
 
             print("Преобразование графика в HTML...")
             config = {
-                'displaylogo': False
+                'displaylogo': False,
+                'displayModeBar': False
             }
             plotly_js_path = "./plotly-2.32.0.min.js"
 
@@ -393,8 +430,7 @@ class MainWindow(QMainWindow):
                 test_well['Facies'] = test_well['Predicted_Class'].map(Constants.LITHOLOGY_KEYS).map(Constants.LITHOLOGY_NUMBERS)
                 test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(Constants.LITHOLOGY_NUMBERS)
                 print("Предсказания обработаны")
-
-                self.save_logs_to_database(test_well)
+                self.test_well = test_well
                 unique_facies = test_well['Predicted Facies'].unique()
                 unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in unique_facies if
                                                 key in self.lithology_description.dictionary}
@@ -410,7 +446,8 @@ class MainWindow(QMainWindow):
                 well_name = os.path.basename(self.file_path).replace(".las", "")
                 fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
                 config = {
-                    'displaylogo': False
+                    'displaylogo': False,
+                    'displayModeBar': False
                 }
                 print("Преобразование графика в HTML...")
                 plotly_js_path = "./plotly-2.32.0.min.js"

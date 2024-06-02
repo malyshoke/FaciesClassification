@@ -1,7 +1,8 @@
 import sys
 import os
 from datetime import datetime
-
+from io import BytesIO
+import requests
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, DateTime
 import openpyxl
 import pandas as pd
@@ -27,49 +28,6 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 import lasio
 
-# Настройки подключения к базе данных
-DATABASE_URL = "postgresql+psycopg2://kate:kate@localhost:5432/geologml"
-
-# Определение моделей SQLAlchemy
-Base = declarative_base()
-
-class Wells(Base):
-    __tablename__ = 'wells'
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    start_depth = Column(Float, nullable=False)
-    stop_depth = Column(Float, nullable=False)
-    log_export_date = Column(DateTime, nullable=False)
-    logs = relationship('Log', back_populates='well')
-
-class Log(Base):
-    __tablename__ = 'logs'
-    id = Column(Integer, primary_key=True)
-    well_id = Column(Integer, ForeignKey('wells.id'))
-    depth = Column(Float, nullable=False)
-    cali = Column(Float)
-    bs = Column(Float)
-    dcal = Column(Float)
-    rop = Column(Float)
-    rdep = Column(Float)
-    rsha = Column(Float)
-    rmed = Column(Float)
-    sp = Column(Float)
-    dtc = Column(Float)
-    nphi = Column(Float)
-    pef = Column(Float)
-    gr = Column(Float)
-    rhob = Column(Float)
-    drho = Column(Float)
-    predicted_facies = Column(String)
-    well = relationship('Wells', back_populates='logs')
-
-
-# Создание и инициализация базы данных
-engine = create_engine(DATABASE_URL)
-Base.metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
-session = Session()
 class LithologyDescription:
     def __init__(self, lithology_dict):
         self.dictionary = lithology_dict
@@ -230,61 +188,7 @@ class MainWindow(QMainWindow):
         self.ui.pushButtonLoad.clicked.connect(self.load_las_file)
         self.ui.pushButton.clicked.connect(self.plot_full_graph)
         self.ui.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
-        self.ui.saveToDbButton.clicked.connect(self.save_logs_to_database)
 
-    def save_logs_to_database(self):
-        if self.test_well is None:
-            QMessageBox.warning(self, "Нет данных", "Загрузите данные перед сохранением в базу данных.")
-            return
-
-        well_name = os.path.basename(self.file_path).replace(".las", "")
-        existing_well = session.query(Wells).filter_by(name=well_name).first()
-
-        las = lasio.read(self.file_path)
-        start = las.well['STRT'].value
-        stop = las.well['STOP'].value
-        datetime_str = las.well['DATE'].value.strip()
-        datetime_str = datetime_str.split(' :')[0].strip()
-        print(datetime_str)
-        datetime_format = "%Y-%m-%d %H:%M:%S"
-        datetime_obj = datetime.strptime(datetime_str, datetime_format)
-
-        if not existing_well:
-            new_well = Wells(
-                name=well_name,
-                start_depth=start,
-                stop_depth=stop,
-                log_export_date=datetime_obj
-            )
-            session.add(new_well)
-            session.commit()
-            well_id = new_well.id
-        else:
-            well_id = existing_well.id
-
-        for index, row in self.test_well.iterrows():
-            new_log = Log(
-                well_id=well_id,
-                depth=row['DEPTH_MD'],
-                cali=row.get('CALI'),
-                bs=row.get('BS'),
-                dcal=row.get('DCAL'),
-                rop=row.get('ROP'),
-                rdep=row.get('RDEP'),
-                rsha=row.get('RSHA'),
-                rmed=row.get('RMED'),
-                sp=row.get('SP'),
-                dtc=row.get('DTC'),
-                nphi=row.get('NPHI'),
-                pef=row.get('PEF'),
-                gr=row.get('GR'),
-                rhob=row.get('RHOB'),
-                drho=row.get('DRHO'),
-                predicted_facies=row.get('Predicted_Class')
-            )
-            session.add(new_log)
-        session.commit()
-        QMessageBox.information(self, "Успех", "Данные успешно сохранены в базу данных.")
 
 
     def load_las_file(self):
@@ -399,72 +303,91 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            print("Загрузка данных скважины...")
-            force_well = Well(filename=self.file_path, path=None)
-            test_well = pd.DataFrame(force_well.df())
-            print(test_well.columns)
-            print("Данные загружены успешно.")
-            self.predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
-            test_well = test_well.iloc[5000:]
-            test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
-            max_rows = 10000
-            if len(test_well) > max_rows:
-                print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
-                test_well = test_well.tail(max_rows)
-                print(f"Сокращенные данные до {len(test_well)} строк.")
+            url = 'http://127.0.0.1:8081/predict'
+            files = {'file': open(self.file_path, 'rb')}
+            response = requests.post(url, files=files)
 
-            print("Получение предсказаний...")
-            selected_columns = self.get_selected_columns()
-            if not set(Constants.FEATURES).issubset(test_well.columns):
-                missing = list(set(Constants.FEATURES) - set(test_well.columns))
-                QMessageBox.critical(self, "Недостающие колонки",
-                                     f"Отсутствуют следующие необходимые столбцы: {', '.join(missing)}")
+            if response.status_code == 200:
+                # Сохранение файла локально
+                predicted_file_path = 'predicted_output.las'
+                with open(predicted_file_path, 'wb') as f:
+                    f.write(response.content)
 
-            predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
+                print(f"Предсказанный файл сохранен как '{predicted_file_path}'")
 
-            if predictions is not None:
-                test_well['Predicted_Class'] = predictions
-                print("Предсказания успешно сохранены в базу данных.")
+                # Создание объекта Well из предсказанного файла
+                force_well = Well(filename=predicted_file_path, path=None)
+                test_well = pd.DataFrame(force_well.df())
+                print(test_well.columns)
+                print("Данные загружены успешно.")
 
+                # Проверка наличия предсказаний
+                if 'PREDICTIONS' in test_well.columns:
+                    print("Предсказания успешно сохранены в базу данных.")
 
-                test_well['Facies'] = test_well['Predicted_Class'].map(Constants.LITHOLOGY_KEYS).map(Constants.LITHOLOGY_NUMBERS)
-                test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(Constants.LITHOLOGY_NUMBERS)
-                print("Предсказания обработаны")
-                self.test_well = test_well
-                unique_facies = test_well['Predicted Facies'].unique()
-                unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in unique_facies if
-                                                key in self.lithology_description.dictionary}
-                print("Генерация графика...")
-                print(unique_lithology_description)
-                fig = cwp.plot_logs(
-                    df=test_well,
-                    logs=selected_columns,
-                    lithology_logs=['Facies'],
-                    lithology_description=LithologyDescription(unique_lithology_description),
-                    show_fig=False
-                )
-                well_name = os.path.basename(self.file_path).replace(".las", "")
-                fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
-                config = {
-                    'displaylogo': False,
-                    'displayModeBar': False
-                }
-                print("Преобразование графика в HTML...")
-                plotly_js_path = "./plotly-2.32.0.min.js"
+                    # Обработка данных
+                    self.predictions = test_well['PREDICTIONS']
+                    test_well = test_well.iloc[5000:]
+                    test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
+                    max_rows = 10000
+                    if len(test_well) > max_rows:
+                        print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
+                        test_well = test_well.tail(max_rows)
+                        print(f"Сокращенные данные до {len(test_well)} строк.")
 
-                raw_html = plot(fig_with_legend, include_plotlyjs=False, output_type='div', config=config)
-                raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
+                    print("Получение предсказаний...")
+                    selected_columns = self.get_selected_columns()
 
-                with open("prediction.html", "w") as debug_file:
-                    debug_file.write(raw_html)
+                    # Обработка и визуализация предсказаний
+                    test_well['Facies'] = test_well['PREDICTIONS'].map(Constants.LITHOLOGY_KEYS).map(
+                        Constants.LITHOLOGY_NUMBERS)
+                    test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(
+                        Constants.LITHOLOGY_NUMBERS)
+                    print(test_well['Facies'])
+                    print("Предсказания обработаны")
+                    self.test_well = test_well
+                    unique_facies = test_well['Predicted Facies'].unique()
+                    unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in
+                                                    unique_facies if
+                                                    key in self.lithology_description.dictionary}
+                    print("Генерация графика...")
+                    print(unique_lithology_description)
+                    fig = cwp.plot_logs(
+                        df=test_well,
+                        logs=selected_columns,
+                        lithology_logs=['Facies'],
+                        lithology_description=LithologyDescription(unique_lithology_description),
+                        show_fig=False
+                    )
+                    well_name = os.path.basename(self.file_path).replace(".las", "")
+                    fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
+                    config = {
+                        'displaylogo': False,
+                        'displayModeBar': False
+                    }
+                    print("Преобразование графика в HTML...")
+                    plotly_js_path = "./plotly-2.32.0.min.js"
 
-                print("HTML сгенерирован.")
+                    raw_html = plot(fig_with_legend, include_plotlyjs=False, output_type='div', config=config)
+                    raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
 
-                print("Загрузка HTML в QWebEngineView...")
-                self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("prediction.html")))
+                    with open("prediction.html", "w") as debug_file:
+                        debug_file.write(raw_html)
+
+                    print("HTML сгенерирован.")
+
+                    print("Загрузка HTML в QWebEngineView...")
+                    self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("prediction.html")))
+
+            else:
+                QMessageBox.critical(self, "Ошибка предсказания",
+                                     f"Ошибка при выполнении предсказания: {response.status_code}")
 
         except Exception as e:
-            print("Ошибка при выполнении предсказания:", str(e))
+            print(f"Ошибка при выполнении предсказания: {str(e)}")
+            QMessageBox.critical(self, "Ошибка предсказания", f"Ошибка при выполнении предсказания: {str(e)}")
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

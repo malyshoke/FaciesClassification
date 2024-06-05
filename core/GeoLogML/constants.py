@@ -2,10 +2,10 @@ class Constants:
     LITHOLOGY_COLORS = {
         0: '#e6e208',
         1: '#f2f21d',
-        2: '#ff7f0e',
+        2: '#0b8102',
         3: '#bb4cd0',
         4: '#f75f00',
-        5: '#0b8102',
+        5: '#ff7f0e',
         6: '#1f77b4',
         7: '#ff00ff',
         8: '#9467bd',

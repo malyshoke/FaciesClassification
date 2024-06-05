@@ -11,22 +11,19 @@ from PySide6.QtCore import QUrl, Qt
 from openpyxl.utils import get_column_letter
 
 import constants
+from LithologyModel import LithologyModel
 from ui_mainwindow import Ui_MainWindow
 from cegal.welltools.wells import Well
 from cegal.welltools.plotting import CegalWellPlotter as cwp
 from plotly.offline import plot
 from constants import Constants
-from LithologyModel import LithologyModel
 from PySide6.QtWidgets import QMessageBox
 import re
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from openpyxl.styles import Font, Alignment, PatternFill
-# SQLAlchemy и psycopg2 для работы с базой данных
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
-import lasio
+
 
 class LithologyDescription:
     def __init__(self, lithology_dict):
@@ -176,20 +173,119 @@ class MainWindow(QMainWindow):
         self.file_path = None
         self.columns = []
         self.test_well = None
-
         self.lithology_model = LithologyModel('ovr_classifier.pkl', 'scaler.pkl')
+
 
         lithology_description_dict = {
             Constants.LITHOLOGY_NUMBERS[v]: (k, Constants.LITHOLOGY_COLORS[Constants.LITHOLOGY_NUMBERS[v]])
             for k, v in Constants.LITHOLOGY_KEYS.items()
         }
         self.lithology_description = LithologyDescription(lithology_description_dict)
-        self.ui.saveButton.clicked.connect(self.save_predictions_to_excel)
+        self.ui.saveButtonFile.clicked.connect(self.save_predictions_to_excel)
         self.ui.pushButtonLoad.clicked.connect(self.load_las_file)
-        self.ui.pushButton.clicked.connect(self.plot_full_graph)
-        self.ui.pushButtonSimple.clicked.connect(self.get_lithology_predictions)
+        self.ui.pushButtonFilePlot.clicked.connect(self.plot_full_graph)
+        self.ui.pushButtonFilePredict.clicked.connect(self.get_lithology_predictions2)
+        self.ui.saveToDbButtonFile.clicked.connect(self.save_to_db_file)
+
+        self.ui.saveButtonDb.clicked.connect(self.save_predictions_to_excel)
+        self.ui.wellComboBox.currentIndexChanged.connect(self.on_well_selected)
+        self.ui.pushButtonDbPlot.clicked.connect(self.plot_full_graph1)
+        self.ui.pushButtonDbPredict.clicked.connect(self.get_lithology_predictions)
+        self.ui.plotWellButton.clicked.connect(self.get_well_data_and_plot)
+        self.ui.tabWidget.currentChanged.connect(self.on_tab_changed)
+        self.load_well_names()
+
+    def load_well_data(self, well_name):
+        try:
+            url = f'http://127.0.0.1:8081/well_data?well_name={well_name}'
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                data = response.json()
+                self.test_well = pd.DataFrame(data)
+                self.file_path = f"{well_name}.las"  # Имя файла для последующего использования
+
+                # Выбираем только те колонки, которые не входят в exclude_columns
+                self.columns = [col for col in self.test_well.columns if col not in Constants.exclude_columns]
+                self.ui.columnsListWidgetDb.clear()
+                for column in self.columns:
+                    item = QListWidgetItem(column)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    self.ui.columnsListWidgetDb.addItem(item)
+            else:
+                print(f"Ошибка при получении данных: {response.status_code}")
+
+        except Exception as e:
+            print(f"Ошибка при выполнении запроса: {str(e)}")
+
+    def load_well_names(self):
+        try:
+            url = 'http://127.0.0.1:8081/wells_names'
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                wells = response.json()
+                self.ui.wellComboBox.clear()  # Очищаем выпадающий список перед добавлением новых элементов
+                self.ui.wellComboBox.addItems(wells)
+            else:
+                print(f"Ошибка при получении данных: {response.status_code}")
+
+        except Exception as e:
+            print(f"Ошибка при выполнении запроса: {str(e)}")
+
+    def on_well_selected(self, index):
+        well_name = self.ui.wellComboBox.currentText()
+        self.load_well_data(well_name)
+
+    def save_to_db_file(self):
+        if self.file_path:
+            try:
+                url = 'http://127.0.0.1:8081/save_to_db'
+                files = {'file': open(self.file_path, 'rb')}
+                response = requests.post(url, files=files)
+
+                if response.status_code == 200:
+                    QMessageBox.information(self, "Успех", "Файл успешно сохранен в базе данных.")
+                else:
+                    QMessageBox.critical(self, "Ошибка", f"Ошибка при сохранении файла: {response.json().get('error')}")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Ошибка при выполнении запроса: {str(e)}")
+        else:
+            QMessageBox.warning(self, "Файл не выбран",
+                                "Пожалуйста, выберите файл LAS перед сохранением в базу данных.")
+    def plot_full_graph1(self, well_name):
+        try:
+            url = f'http://127.0.0.1:8081/well_data?well_name={well_name}'
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                data = response.json()
+                self.test_well = pd.DataFrame(data)
+                self.file_path = f"{well_name}.las"  # Имя файла для последующего использования
+
+                # Выбираем только те колонки, которые не входят в exclude_columns
+                self.columns = [col for col in self.test_well.columns if col not in Constants.exclude_columns]
+                self.ui.columnsListWidgetDb.clear()
+                for column in self.columns:
+                    item = QListWidgetItem(column)
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                    self.ui.columnsListWidgetDb.addItem(item)
+
+                self.plot_full_graph()
+
+            else:
+                print(f"Ошибка при получении данных: {response.status_code}")
+
+        except Exception as e:
+            print(f"Ошибка при выполнении запроса: {str(e)}")
 
 
+    def on_tab_changed(self, index):
+        if self.ui.tabWidget.tabText(index) == "Загрузка из БД":
+            self.load_well_names()
 
     def load_las_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Выбрать LAS файл", "", "LAS Files (*.las)")
@@ -202,12 +298,12 @@ class MainWindow(QMainWindow):
 
             # Выбираем только те колонки, которые не входят в exclude_columns
             self.columns = [col for col in self.test_well.columns if col not in Constants.exclude_columns]
-            self.ui.columnsListWidget.clear()
+            self.ui.columnsListWidgetFile.clear()
             for column in self.columns:
                 item = QListWidgetItem(column)
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Unchecked)
-                self.ui.columnsListWidget.addItem(item)
+                self.ui.columnsListWidgetFile.addItem(item)
 
     def save_predictions_to_excel(self):
         if self.test_well is not None and self.predictions is not None:
@@ -230,11 +326,72 @@ class MainWindow(QMainWindow):
 
     def get_selected_columns(self):
         selected_columns = []
-        for index in range(self.ui.columnsListWidget.count()):
-            item = self.ui.columnsListWidget.item(index)
+        for index in range(self.ui.columnsListWidgetFile.count()):
+            item = self.ui.columnsListWidgetFile.item(index)
             if item.checkState() == Qt.Checked:
                 selected_columns.append(item.text())
         return selected_columns
+
+    def get_well_data_and_plot(self):
+        try:
+            url = 'http://127.0.0.1:8081/well_loc'
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                data = response.json()
+                df = pd.DataFrame(data)
+                self.plot_well_data(df)
+            else:
+                print(f"Ошибка при получении данных: {response.status_code}")
+
+        except Exception as e:
+            print(f"Ошибка при выполнении запроса: {str(e)}")
+
+    def plot_well_data(self, data):
+        # Преобразование данных в DataFrame
+        df = pd.DataFrame(data)
+
+        # Генерация уникальных цветов для каждой скважины
+        unique_wells = df['WELL'].unique()
+        color_map = {well: f'rgb({i * 50 % 256}, {(i * 50 + 100) % 256}, {(i * 50 + 200) % 256})' for i, well in
+                     enumerate(unique_wells)}
+        colors = df['WELL'].map(color_map)
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(
+            x=df['X_LOC'],
+            y=df['Y_LOC'],
+            mode='markers+text',
+            marker=dict(size=df['data_points'], sizemode='area', sizeref=2. * max(df['data_points']) / (40. ** 2),
+                        sizemin=4, color=colors),
+            text=df['WELL'],
+            textposition='top center'
+        ))
+
+        fig.update_layout(
+            xaxis_title='Координата по Х (UTM)',
+            yaxis_title='Координата по Y (UTM)',
+            showlegend=False,
+            width=900,
+            height=800,
+            margin=dict(t=30),
+            title_text=f"Расположение скважин",
+            title_x=0.5,
+            title_y=0.98,
+        )
+
+        config = {
+            'displaylogo': False,
+            'displayModeBar': False
+        }
+        # Создание HTML-контента для графика
+        plotly_js_cdn = "https://cdn.plot.ly/plotly-latest.min.js"
+        raw_html = f'<script src="{plotly_js_cdn}"></script>' + fig.to_html(full_html=False, include_plotlyjs=False, config = config)
+
+        # Установка HTML-контента в QWebEngineView
+        self.ui.webEngineView.setHtml(raw_html)
+
 
     def plot_full_graph(self):
         if not self.file_path:
@@ -297,6 +454,79 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print("Ошибка при построении графика:", str(e))
 
+    def get_lithology_predictions2(self):
+        if not self.file_path:
+            QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл LAS перед построением графика.")
+            return
+
+        try:
+            print("Загрузка данных скважины...")
+            force_well = Well(filename=self.file_path, path=None)
+            test_well = pd.DataFrame(force_well.df())
+            print(test_well.columns)
+            print("Данные загружены успешно.")
+            self.predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
+            test_well = test_well.iloc[5000:]
+            test_well = test_well.dropna(subset=['FORCE_2020_LITHOFACIES_LITHOLOGY'])
+            max_rows = 10000
+            if len(test_well) > max_rows:
+                print(f"Сокращение данных с {len(test_well)} строк до {max_rows} строк...")
+                test_well = test_well.tail(max_rows)
+                print(f"Сокращенные данные до {len(test_well)} строк.")
+
+            print("Получение предсказаний...")
+            selected_columns = self.get_selected_columns()
+            if not set(Constants.FEATURES).issubset(test_well.columns):
+                missing = list(set(Constants.FEATURES) - set(test_well.columns))
+                QMessageBox.critical(self, "Недостающие колонки",
+                                     f"Отсутствуют следующие необходимые столбцы: {', '.join(missing)}")
+
+            predictions = self.lithology_model.predict(test_well[Constants.FEATURES])
+
+            if predictions is not None:
+                test_well['Predicted_Class'] = predictions
+
+                test_well['Facies'] = test_well['Predicted_Class'].map(Constants.LITHOLOGY_KEYS).map(
+                    Constants.LITHOLOGY_NUMBERS)
+                test_well['Predicted Facies'] = test_well['FORCE_2020_LITHOFACIES_LITHOLOGY'].map(
+                    Constants.LITHOLOGY_NUMBERS)
+                print("Предсказания обработаны")
+                self.test_well = test_well
+                unique_facies = test_well['Predicted Facies'].unique()
+                unique_lithology_description = {key: self.lithology_description.dictionary[key] for key in unique_facies
+                                                if
+                                                key in self.lithology_description.dictionary}
+                print("Генерация графика...")
+                print(unique_lithology_description)
+                fig = cwp.plot_logs(
+                    df=test_well,
+                    logs=selected_columns,
+                    lithology_logs=['Facies'],
+                    lithology_description=LithologyDescription(unique_lithology_description),
+                    show_fig=False
+                )
+                well_name = os.path.basename(self.file_path).replace(".las", "")
+                fig_with_legend = add_legend_to_figure(fig, self.lithology_description, well_name)
+                config = {
+                    'displaylogo': False,
+                    'displayModeBar': False
+                }
+                print("Преобразование графика в HTML...")
+                plotly_js_path = "./plotly-2.32.0.min.js"
+
+                raw_html = plot(fig_with_legend, include_plotlyjs=False, output_type='div', config=config)
+                raw_html = f'<script src="{plotly_js_path}"></script>' + raw_html
+
+                with open("prediction.html", "w") as debug_file:
+                    debug_file.write(raw_html)
+
+                print("HTML сгенерирован.")
+
+                print("Загрузка HTML в QWebEngineView...")
+                self.ui.webEngineView.setHtml(raw_html, QUrl.fromLocalFile(os.path.abspath("prediction.html")))
+
+        except Exception as e:
+            print("Ошибка при выполнении предсказания:", str(e))
     def get_lithology_predictions(self):
         if not self.file_path:
             QMessageBox.warning(self, "Файл не выбран", "Пожалуйста, выберите файл LAS перед построением графика.")
@@ -309,7 +539,9 @@ class MainWindow(QMainWindow):
 
             if response.status_code == 200:
                 # Сохранение файла локально
-                predicted_file_path = 'predicted_output.las'
+                base_name = os.path.basename(self.file_path)
+                name, ext = os.path.splitext(base_name)
+                predicted_file_path = f'{name}_predicted{ext}'
                 with open(predicted_file_path, 'wb') as f:
                     f.write(response.content)
 

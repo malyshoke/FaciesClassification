@@ -2,6 +2,7 @@ import logging
 import time
 from datetime import datetime
 import lasio
+import pandas as pd
 from flask import Flask, jsonify, request, send_file
 from sqlalchemy import create_engine, DateTime, Column, LargeBinary
 from waitress import serve
@@ -25,6 +26,23 @@ session = Session()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+@app.route('/save_to_db', methods=['POST'])
+def save_to_db_endpoint():
+    try:
+        input_las_file = request.files['file']
+        file_content = input_las_file.read()
+
+        # Чтение файла с правильным декодированием
+        file_str = io.StringIO(file_content.decode('utf-8'))
+        las = lasio.read(file_str)
+
+        save_to_db_chat(file_content, las)
+        return jsonify({'message': 'File saved to database successfully'}), 200
+
+    except Exception as e:
+        logging.exception("Failed to save the LAS file to the database")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -42,14 +60,11 @@ def predict():
         df['Predictions'] = predictions
         las.set_data(df)
 
-        # Сохранение обновленного файла в базу данных
         string_io = io.StringIO()
         las.write(string_io)
         file_bytes = io.BytesIO(string_io.getvalue().encode('utf-8'))
-        save_to_db_chat(file_bytes.getvalue(), las)
-
         file_bytes.seek(0)
-        end_time = time.time()  # Записываем время окончания обработки запроса
+        end_time = time.time()
         logging.info(f"Request processed in {end_time - start_time} seconds")
 
         return send_file(file_bytes, as_attachment=True, download_name=input_las_file.filename,
@@ -58,9 +73,65 @@ def predict():
         logging.exception("Failed to process the LAS file")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/well_data', methods=['GET'])
+def get_well_data_by_name():
+    well_name = request.args.get('well_name')
+    try:
+        well = session.query(Wells).filter_by(name=well_name).first()
+        if well is None:
+            return jsonify({'error': 'Well not found'}), 404
 
+        logs_query = session.query(Log).join(WellLogging).filter(
+            WellLogging.well_id == well.id
+        )
+
+        df = pd.read_sql(logs_query.statement, logs_query.session.bind)
+        result = df.to_dict(orient='records')
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/wells_names', methods=['GET'])
+def get_wells():
+    try:
+        wells_query = session.query(Wells.name).all()
+        wells = [well.name for well in wells_query]
+        return jsonify(wells)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/well_loc', methods=['GET'])
+def get_well_data():
+    try:
+        # Получение данных из базы данных с использованием ORM
+        logs_query = session.query(
+            Wells.name.label('WELL'),
+            Log.x_loc.label('X_LOC'),
+            Log.y_loc.label('Y_LOC')
+        ).join(WellLogging, Wells.id == WellLogging.well_id).join(Log, WellLogging.id == Log.well_logging_id)
+
+        df = pd.read_sql(logs_query.statement, logs_query.session.bind)
+
+        # Группировка данных и вычисление характеристик
+        well_names_uniq = df['WELL'].unique()
+        X_cor = df.groupby(['WELL'])['X_LOC'].mean()  # location coordinate
+        Y_cor = df.groupby(['WELL'])['Y_LOC'].mean()
+        data_count = df.groupby(['WELL']).count().sum(axis='columns')
+
+        loc_wells_df = pd.DataFrame({'WELL': well_names_uniq, 'X_LOC': X_cor, 'Y_LOC': Y_cor, 'data_points': data_count})
+
+        # Преобразование данных в формат JSON
+        result = loc_wells_df.to_dict(orient='records')
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 def save_to_db_chat(file_content, las):
-    well_name = las.well['WELL'].value.strip()
+    well_name = las.well['UWI'].value.strip()
     field_name = las.well['FLD'].value.strip() if 'FLD' in las.well else 'Unknown'
     existing_well = session.query(Wells).filter_by(name=well_name).first()
     if not existing_well:
@@ -106,6 +177,9 @@ def save_to_db_chat(file_content, las):
             gr=row.get('GR', None),
             rhob=row.get('RHOB', None),
             drho=row.get('DRHO', None),
+            x_loc=row.get('X_LOC', None),
+            y_loc=row.get('Y_LOC', None),
+            z_loc=row.get('Z_LOC', None),
             predicted_facies=row.get('Predictions', None)
         ))
     session.bulk_save_objects(logs)

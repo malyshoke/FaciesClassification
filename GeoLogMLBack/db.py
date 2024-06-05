@@ -64,6 +64,9 @@ class Log(Base):
     gr = Column(Float)
     rhob = Column(Float)
     drho = Column(Float)
+    x_loc = Column(Float)
+    y_loc = Column(Float)
+    z_loc = Column(Float)
     predicted_facies = Column(String)
     well_logging = relationship('WellLogging', back_populates='logs')
 

@@ -1,6 +1,0 @@
-tqdm
-numpy
-pandas
-scikit-learn
-matplotlib
-tensorflow

@@ -73,25 +73,23 @@ def predict():
         logging.exception("Failed to process the LAS file")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/well_data', methods=['GET'])
-def get_well_data_by_name():
+@app.route('/download_well_data', methods=['GET'])
+def download_well_data():
     well_name = request.args.get('well_name')
     try:
-        well = session.query(Wells).filter_by(name=well_name).first()
-        if well is None:
+        well_logging = session.query(WellLogging).join(Wells).filter(Wells.name == well_name).first()
+        if well_logging is None:
+            logging.error(f"Well not found: {well_name}")
             return jsonify({'error': 'Well not found'}), 404
 
-        logs_query = session.query(Log).join(WellLogging).filter(
-            WellLogging.well_id == well.id
-        )
+        file_content = well_logging.file_content
 
-        df = pd.read_sql(logs_query.statement, logs_query.session.bind)
-        result = df.to_dict(orient='records')
-
-        return jsonify(result)
-
+        return send_file(io.BytesIO(file_content), download_name=f"{well_name}.las", as_attachment=True,
+                         mimetype='application/octet-stream')
     except Exception as e:
+        logging.exception(f"Failed to download well data for {well_name}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/wells_names', methods=['GET'])
 def get_wells():
@@ -130,9 +128,13 @@ def get_well_data():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
 def save_to_db_chat(file_content, las):
     well_name = las.well['UWI'].value.strip()
     field_name = las.well['FLD'].value.strip() if 'FLD' in las.well else 'Unknown'
+
+    # Проверка существования скважины
     existing_well = session.query(Wells).filter_by(name=well_name).first()
     if not existing_well:
         new_well = Wells(
@@ -142,11 +144,25 @@ def save_to_db_chat(file_content, las):
         session.add(new_well)
         session.commit()
         existing_well = new_well
+
+    # Форматирование даты
     datetime_str = las.well['DATE'].value.strip()
     datetime_str = datetime_str.split(' :')[0].strip()
     datetime_format = "%Y-%m-%d %H:%M:%S"
     datetime_obj = datetime.strptime(datetime_str, datetime_format)
 
+    # Проверка существования отчета
+    existing_well_logging = session.query(WellLogging).filter_by(
+        well_id=existing_well.id,
+        log_export_date=datetime_obj
+    ).first()
+
+    if existing_well_logging:
+        # Если отчет существует, выходим без сохранения логов
+        logging.info("Report already exists in the database. Skipping log saving.")
+        return
+
+    # Создание нового отчета, если он не существует
     new_well_logging = WellLogging(
         well_id=existing_well.id,
         start_depth=float(las.well['STRT'].value),
@@ -157,9 +173,20 @@ def save_to_db_chat(file_content, las):
     session.add(new_well_logging)
     session.commit()
 
+    # Получение данных из LAS файла и сохранение логов
     df = las.df()
     logs = []
     for depth, row in df.iterrows():
+        # Проверка на существование логов
+        existing_log = session.query(Log).filter_by(
+            well_logging_id=new_well_logging.id,
+            depth=depth
+        ).first()
+
+        if existing_log:
+            logging.info(f"Log at depth {depth} already exists. Skipping.")
+            continue
+
         logs.append(Log(
             well_logging_id=new_well_logging.id,
             depth=depth,
@@ -182,8 +209,13 @@ def save_to_db_chat(file_content, las):
             z_loc=row.get('Z_LOC', None),
             predicted_facies=row.get('Predictions', None)
         ))
-    session.bulk_save_objects(logs)
-    session.commit()
+
+    if logs:
+        session.bulk_save_objects(logs)
+        session.commit()
+        logging.info("Logs saved successfully.")
+    else:
+        logging.info("No new logs to save.")
 
 
 if __name__ == '__main__':
